@@ -4,6 +4,7 @@ PyTorch Forecasting package for timeseries forecasting with PyTorch.
 from pytorch_forecasting.data import (
     EncoderNormalizer,
     GroupNormalizer,
+    BaseTimeSeriesDataset,
     MultiNormalizer,
     NaNLabelEncoder,
     TimeSeriesDataSet,
@@ -60,6 +61,7 @@ from pytorch_forecasting.utils import (
 )
 
 __all__ = [
+    "BaseTimeSeriesDataSet",
     "TimeSeriesDataSet",
     "GroupNormalizer",
     "EncoderNormalizer",
