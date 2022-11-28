@@ -19,7 +19,7 @@ from sklearn.utils.validation import check_is_fitted
 import torch
 from torch.distributions import Beta
 from torch.nn.utils import rnn
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 from torch.utils.data.sampler import Sampler
 
 from pytorch_forecasting.data.encoders import (
@@ -34,12 +34,12 @@ from pytorch_forecasting.utils import repr_class
 from pytorch_forecasting.data.utils import check_for_nonfinite, _find_end_indices
 from pytorch_forecasting.data.base_timeseries import BaseTimeSeriesDataSet
 
-try:
-    import numba
+# try:
+#     import numba
 
-    _find_end_indices = numba.jit(nopython=True)(_find_end_indices)
-except ImportError:
-    pass
+#     _find_end_indices = numba.jit(nopython=True)(_find_end_indices)
+# except ImportError:
+#     pass
 
 NORMALIZER = Union[TorchNormalizer, NaNLabelEncoder, EncoderNormalizer]
 
@@ -256,26 +256,22 @@ class TimeSeriesDataSet(BaseTimeSeriesDataSet):
                 the last ``max_prediction_length`` samples of each time series as
                 prediction samples and everthing previous up to ``max_encoder_length`` samples as encoder samples.
         """
-        super().__init__(data, time_idx, target, group_ids)
-        self.max_encoder_length = max_encoder_length
-        assert isinstance(self.max_encoder_length, int), "max encoder length must be integer"
-        if min_encoder_length is None:
-            min_encoder_length = max_encoder_length
-        self.min_encoder_length = min_encoder_length
-        assert (
-            self.min_encoder_length <= self.max_encoder_length
-        ), "max encoder length has to be larger equals min encoder length"
-        assert isinstance(self.min_encoder_length, int), "min encoder length must be integer"
-        self.max_prediction_length = max_prediction_length
-        assert isinstance(self.max_prediction_length, int), "max prediction length must be integer"
-        if min_prediction_length is None:
-            min_prediction_length = max_prediction_length
-        self.min_prediction_length = min_prediction_length
-        assert (
-            self.min_prediction_length <= self.max_prediction_length
-        ), "max prediction length has to be larger equals min prediction length"
-        assert self.min_prediction_length > 0, "min prediction length must be larger than 0"
-        assert isinstance(self.min_prediction_length, int), "min prediction length must be integer"
+        super().__init__(
+            data,
+            time_idx,
+            target,
+            group_ids,
+            max_encoder_length,
+            min_encoder_length,
+            min_prediction_length,
+            max_prediction_length,
+            static_categoricals,
+            static_reals,
+            time_varying_known_categoricals,
+            time_varying_known_reals,
+            time_varying_unknown_categoricals,
+            time_varying_unknown_reals,
+        )
         assert data[time_idx].dtype.kind == "i", "Timeseries index should be of type integer"
         self.weight = weight
         self.static_categoricals = [] + static_categoricals
@@ -548,7 +544,7 @@ class TimeSeriesDataSet(BaseTimeSeriesDataSet):
         """
         return list(self._group_ids_mapping.values())
 
-    def _validate_data(self, data: pd.DataFrame):
+    def _validate_data(self, data: pd.DataFrame) -> None:
         """
         Validate that data will not cause hick-ups later on.
         """
@@ -955,16 +951,6 @@ class TimeSeriesDataSet(BaseTimeSeriesDataSet):
         return tensors
 
     @property
-    def categoricals(self) -> List[str]:
-        """
-        Categorical variables as used for modelling.
-
-        Returns:
-            List[str]: list of variables
-        """
-        return self.static_categoricals + self.time_varying_known_categoricals + self.time_varying_unknown_categoricals
-
-    @property
     def flat_categoricals(self) -> List[str]:
         """
         Categorical variables as defined in input data.
@@ -992,16 +978,6 @@ class TimeSeriesDataSet(BaseTimeSeriesDataSet):
         for group_name, sublist in self.variable_groups.items():
             groups.update({name: group_name for name in sublist})
         return groups
-
-    @property
-    def reals(self) -> List[str]:
-        """
-        Continous variables as used for modelling.
-
-        Returns:
-            List[str]: list of variables
-        """
-        return self.static_reals + self.time_varying_known_reals + self.time_varying_unknown_reals
 
     @property
     def target_normalizers(self) -> List[TorchNormalizer]:
@@ -1132,7 +1108,6 @@ class TimeSeriesDataSet(BaseTimeSeriesDataSet):
 
         # calculate maximum index to include from current index_start
         max_time = (df_index["time"] + max_sequence_length - 1).clip(upper=df_index["count"] + df_index.time_first - 1)
-
         # if there are missing timesteps, we cannot say directly what is the last timestep to include
         # therefore we iterate until it is found
         if (df_index["time_diff_to_next"] != 1).any():
@@ -1145,6 +1120,7 @@ class TimeSeriesDataSet(BaseTimeSeriesDataSet):
             max_lengths=(max_time - df_index.time).to_numpy() + 1,
             min_length=min_sequence_length,
         )
+
         # add duplicates but mostly with shorter sequence length for start of timeseries
         # while the previous steps have ensured that we start a sequence on every time step, the missing_sequences
         # ensure that there is a sequence that finishes on every timestep

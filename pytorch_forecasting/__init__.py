@@ -4,10 +4,11 @@ PyTorch Forecasting package for timeseries forecasting with PyTorch.
 from pytorch_forecasting.data import (
     EncoderNormalizer,
     GroupNormalizer,
-    BaseTimeSeriesDataset,
     MultiNormalizer,
     NaNLabelEncoder,
+    BaseTimeSeriesDataSet,
     TimeSeriesDataSet,
+    LargeTimeSeriesDataSet
 )
 from pytorch_forecasting.metrics import (
     MAE,

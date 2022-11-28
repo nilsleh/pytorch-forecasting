@@ -14,10 +14,12 @@ from pytorch_forecasting.data.encoders import (
 from pytorch_forecasting.data.samplers import TimeSynchronizedBatchSampler
 from pytorch_forecasting.data.timeseries import TimeSeriesDataSet
 from pytorch_forecasting.data.base_timeseries import BaseTimeSeriesDataSet
+from pytorch_forecasting.data.large_timeseries import LargeTimeSeriesDataSet
 
 __all__ = [
     "TimeSeriesDataSet",
     "BaseTimeSeriesDataSet",
+    "LargeTimeSeriesDataSet",
     "NaNLabelEncoder",
     "GroupNormalizer",
     "TorchNormalizer",

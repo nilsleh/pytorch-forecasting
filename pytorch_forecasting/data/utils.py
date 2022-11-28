@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from typing import List, Union, Tuple
 
+
 def _find_end_indices(diffs: np.ndarray, max_lengths: np.ndarray, min_length: int) -> Tuple[np.ndarray, np.ndarray]:
     """
     Identify end indices in series even if some values are missing.
@@ -26,6 +27,8 @@ def _find_end_indices(diffs: np.ndarray, max_lengths: np.ndarray, min_length: in
 
     for idx, diff in enumerate(diffs):
         if length >= max_length:
+            # import pdb
+            # pdb.set_trace()
             while length >= max_length:
                 if length == max_length:
                     end_indices.append(idx)
