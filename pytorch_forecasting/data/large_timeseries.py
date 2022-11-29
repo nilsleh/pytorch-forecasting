@@ -8,6 +8,7 @@ utilizes the polars library for memory efficience.
 """
 
 from typing import Union, List, Any, Dict, Tuple
+from timeit import default_timer as timer
 import pandas as pd
 import torch
 import numpy as np
@@ -112,9 +113,11 @@ class LargeTimeSeriesDataSet(BaseTimeSeriesDataSet):
         self._validate_data(data)
 
         data = self._preprocess_data(data)
+        print("made it throug preprocess")
 
         # create index
         self.index = self._construct_index(data)
+        print("constructed index")
 
         # keep data as polars df
         self.data = data
@@ -122,32 +125,39 @@ class LargeTimeSeriesDataSet(BaseTimeSeriesDataSet):
     def _preprocess_data(self, data: pl.DataFrame) -> pl.DataFrame:
         """Preprocess data."""
         # target expression list
-        expr_list = [pl.col(target).alias(f"__target__{target}") for target in self.target_names]
+        # expr_list = [pl.col(target).alias(f"__target__{target}") for target in self.target_names]
 
-        # group idx expression list
-        expr_list.extend([pl.col(group).alias(f"__group_id__{group}") for group in self.group_ids])
-        # time_idx expression
-        expr_list.append(pl.col(self.time_idx).alias(f"__time_idx__"))
+        # # group idx expression list
+        # expr_list.extend([pl.col(group).alias(f"__group_id__{group}") for group in self.group_ids])
+        # # time_idx expression
+        # expr_list.append(pl.col(self.time_idx).alias(f"__time_idx__"))
 
-        data = data.with_columns(expr_list)
+        # data = data.with_columns(expr_list)
 
+        print("up to encoder")
         # encode the collection of unique group_ids into one numerical sequence
-        data = data.join(
-            pl.concat(
-                [
-                    data.unique(subset=self.group_ids),
-                    (
-                        pl.arange(0, len(data.unique(subset=self.group_ids)), eager=True, dtype=pl.Int64)
-                        .alias("sequence_id")
-                        .to_frame()
-                    ),
-                ],
-                how="horizontal",
-            ).select(self.group_ids + ["sequence_id"]),
-            left_on=self.group_ids,
-            right_on=self.group_ids,
+        groups = pl.col("sequence_id").first().over(self.group_ids)
+        data = (
+            data
+            .with_row_count(name="sequence_id")
+            .with_column(groups.is_first().cumsum())
+            .with_column(groups - 1)
+            .with_column(pl.col("sequence_id").cast(pl.Int32))
         )
 
+        return data
+
+    def first_method(self, data):
+        data = (
+            data.join(
+                data.select(self.group_ids).unique().with_row_count(name="sequence_id"),
+                on=self.group_ids,
+            )
+        )
+        return data
+
+    def second_method(self, data):
+        
         return data
 
     def _construct_index(self, data: pl.DataFrame) -> pl.DataFrame:
@@ -157,17 +167,16 @@ class LargeTimeSeriesDataSet(BaseTimeSeriesDataSet):
             .groupby(self.group_ids)
             .agg(
                 [
-                    pl.first("__time_idx__").alias("first_time_idx"),
-                    pl.last("__time_idx__").alias("last_time_idx"),
-                    pl.col("__time_idx__").diff(1).shift(-1).fill_null(1).alias("time_idx_diff_to_next"),
+                    # pl.first(self.time_idx).alias("first_time_idx"),
+                    # pl.last(self.time_idx).alias("last_time_idx"),
+                    pl.col(self.time_idx).diff(1).shift(-1).fill_null(1).alias("time_idx_diff_to_next"),
                 ]
             )
             .with_columns(
                 [
-                    (pl.col("last_time_idx") - pl.col("first_time_idx")).alias("diff_first_last_time_idx") + 1,
+                    # (pl.col("last_time_idx") - pl.col("first_time_idx")).alias("diff_first_last_time_idx") + 1,
                     (pl.col("time_idx_diff_to_next").arr.max() != 1).alias("allow_missing"),
                     pl.arange(0, pl.count()).alias("sequence_id"),
-                    # pl.Series(name="unique_time_values", values=pl.col("__time_idx__"))
                 ]
             )
             .drop("count")  # a count column is created during sequence id
@@ -176,11 +185,10 @@ class LargeTimeSeriesDataSet(BaseTimeSeriesDataSet):
 
         # find all the unique timesteps
         unique_ids = (
-            data.select(self.group_ids + ["__time_idx__"])
+            data.select(self.group_ids + [self.time_idx])
             .groupby(self.group_ids)
             .agg_list()
-            .select("__time_idx__")
-            .rename({"__time_idx__": "time_idx"})
+            .select(self.time_idx)
         )
 
         df_index = pl.concat([df_index, unique_ids], how="horizontal")
@@ -195,6 +203,7 @@ class LargeTimeSeriesDataSet(BaseTimeSeriesDataSet):
                 self.allow_missing_timesteps
             ), "Time difference between steps has been idenfied as larger than 1 - set allow_missing_timesteps=True"
 
+        df_index = df_index.drop(columns=["time_idx_diff_to_next", "allow_missing"] + self.group_ids)
         df_index = self.find_subsequences(df_index, "sequence_id", "time_idx", max_sequence_length)
 
         return df_index
@@ -220,7 +229,7 @@ class LargeTimeSeriesDataSet(BaseTimeSeriesDataSet):
             .to_frame()
             .lazy()
         )
-        slice_size = 10000
+        slice_size = 1000
         result = pl.concat(
             [
                 (
@@ -249,7 +258,7 @@ class LargeTimeSeriesDataSet(BaseTimeSeriesDataSet):
                             pl.col("time_idx_nulls").arr.last().alias("end_idx"),
                         ]
                     )
-                    .select([group_idx, "start_idx", "end_idx", "time_idx_nulls"])
+                    .select([group_idx, "start_idx", "end_idx"])
                     .collect()
                 )
                 for next_index in range(0, index_df.height + 1, slice_size)
