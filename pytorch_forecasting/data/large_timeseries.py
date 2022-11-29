@@ -113,28 +113,15 @@ class LargeTimeSeriesDataSet(BaseTimeSeriesDataSet):
         self._validate_data(data)
 
         data = self._preprocess_data(data)
-        print("made it throug preprocess")
 
         # create index
         self.index = self._construct_index(data)
-        print("constructed index")
 
         # keep data as polars df
         self.data = data
 
     def _preprocess_data(self, data: pl.DataFrame) -> pl.DataFrame:
         """Preprocess data."""
-        # target expression list
-        # expr_list = [pl.col(target).alias(f"__target__{target}") for target in self.target_names]
-
-        # # group idx expression list
-        # expr_list.extend([pl.col(group).alias(f"__group_id__{group}") for group in self.group_ids])
-        # # time_idx expression
-        # expr_list.append(pl.col(self.time_idx).alias(f"__time_idx__"))
-
-        # data = data.with_columns(expr_list)
-
-        print("up to encoder")
         # encode the collection of unique group_ids into one numerical sequence
         groups = pl.col("sequence_id").first().over(self.group_ids)
         data = (
@@ -167,14 +154,11 @@ class LargeTimeSeriesDataSet(BaseTimeSeriesDataSet):
             .groupby(self.group_ids)
             .agg(
                 [
-                    # pl.first(self.time_idx).alias("first_time_idx"),
-                    # pl.last(self.time_idx).alias("last_time_idx"),
                     pl.col(self.time_idx).diff(1).shift(-1).fill_null(1).alias("time_idx_diff_to_next"),
                 ]
             )
             .with_columns(
                 [
-                    # (pl.col("last_time_idx") - pl.col("first_time_idx")).alias("diff_first_last_time_idx") + 1,
                     (pl.col("time_idx_diff_to_next").arr.max() != 1).alias("allow_missing"),
                     pl.arange(0, pl.count()).alias("sequence_id"),
                 ]
@@ -291,12 +275,7 @@ class LargeTimeSeriesDataSet(BaseTimeSeriesDataSet):
             np.float32
         )
         sample_data[sample_data.select_dtypes(np.int64).columns] = sample_data.select_dtypes(np.int64).astype(np.int32)
-        try:
-            time_first = sample_data.loc[0, self.time_idx]
-        except KeyError:
-            import pdb
-
-            pdb.set_trace()
+        time_first = sample_data.loc[0, self.time_idx]
         time_last = sample_data.iloc[-1, sample_data.columns.get_loc(self.time_idx)]
 
         sequence_length = len(sample_data)
